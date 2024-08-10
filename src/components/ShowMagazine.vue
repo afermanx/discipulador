@@ -9,6 +9,8 @@ const pageCount = ref(null);
 const pdfSource = ref('/storage/discipulado.pdf');
 const showToast = ref(false);
 const toastMessage = ref('');
+const zoom = ref(1.0); // Zoom level
+const touchStartX = ref(0);
 
 const handleLoad = ({ numPages }) => {
   pageCount.value = numPages;
@@ -26,14 +28,25 @@ watch(() => isLoading.value, (loading) => {
 });
 
 watch(() => page.value, (newPage) => {
-  if (newPage > pageCount.value || newPage < 0) {
+  if (newPage > pageCount.value || newPage < 1) {
     toastMessage.value = 'Página inexistente.';
     showToast.value = true;
     page.value = Math.min(pageCount.value, Math.max(1, page.value));
-     window.location.reload();
-
   }
 });
+
+const handleTouchStart = (e) => {
+  touchStartX.value = e.changedTouches[0].screenX;
+};
+
+const handleTouchEnd = (e) => {
+  const touchEndX = e.changedTouches[0].screenX;
+  if (touchStartX.value - touchEndX > 50) {
+    page.value = Math.min(pageCount.value, page.value + 1);
+  } else if (touchStartX.value - touchEndX < -50) {
+    page.value = Math.max(1, page.value - 1);
+  }
+};
 
 const handleToastClose = () => {
   showToast.value = false;
@@ -90,13 +103,14 @@ onMounted(() => {
             </v-btn>
           </v-card-actions>
 
-          <v-card-text>
+          <v-card-text @touchstart="handleTouchStart" @touchend="handleTouchEnd">
             <VuePdfEmbed
               :page="page"
               :source="pdfSource"
               @count="handlePageCount"
               @loaded="handleLoad"
               :loading="isLoading"
+              :scale="zoom"
             />
           </v-card-text>
           <div class="d-flex align-center justify-center">
@@ -115,7 +129,7 @@ onMounted(() => {
 
   <v-snackbar v-model="showToast" :timeout="3000" color="error" centered>
     {{ toastMessage }}
-    <template v-slot:actions="{ close }">
+    <template v-slot:actions="{ handleToastClose }">
       <v-btn color="white" text @click="handleToastClose">Fechar</v-btn>
     </template>
   </v-snackbar>
