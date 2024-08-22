@@ -1,24 +1,34 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, computed } from 'vue';
 import VuePdfEmbed from 'vue-pdf-embed';
 
 const title = ref('Discipulado');
-const page = ref(1);
+const displayedPage = ref(1); // Page displayed to the user
 const isLoading = ref(true);
-const pageCount = ref(null);
+const pdfPageCount = ref(null); // Actual PDF page count
 const pdfSource = ref('/storage/discipulado.pdf');
 const showToast = ref(false);
 const toastMessage = ref('');
-const zoom = ref(1.0); // Zoom level
 const touchStartX = ref(0);
+const toPage = ref(null);
+
+// Convert displayed page number to PDF page number
+const displayedPageToPdfPage = (displayedPage) => {
+  return displayedPage; // Offset by 2 pages
+};
+
+// Convert PDF page number to displayed page number
+const pdfPageToDisplayedPage = (pdfPage) => {
+  return pdfPage >= 3 ? pdfPage - 2 : 0; // Offset by 2 pages, but 0 for first two pages
+};
 
 const handleLoad = ({ numPages }) => {
-  pageCount.value = numPages;
+  pdfPageCount.value = numPages;
   isLoading.value = false;
 };
 
 const handlePageCount = (numPages) => {
-  pageCount.value = numPages;
+  pdfPageCount.value = numPages;
 };
 
 watch(() => isLoading.value, (loading) => {
@@ -27,11 +37,20 @@ watch(() => isLoading.value, (loading) => {
   }
 });
 
-watch(() => page.value, (newPage) => {
-  if (newPage > pageCount.value || newPage < 1) {
+watch(() => displayedPage.value, (newPage) => {
+  const actualPage = displayedPageToPdfPage(newPage);
+
+  if (actualPage > pdfPageCount.value -2 || actualPage < 0) {
     toastMessage.value = 'Página inexistente.';
     showToast.value = true;
-    page.value = Math.min(pageCount.value, Math.max(1, page.value));
+    displayedPage.value = 1;
+    toPage.value = null;
+  }
+});
+
+watch(() => toPage.value, (newPage) => {3
+  if (newPage) {
+    goToPage();
   }
 });
 
@@ -39,12 +58,20 @@ const handleTouchStart = (e) => {
   touchStartX.value = e.changedTouches[0].screenX;
 };
 
+const goToPage = () => {
+  if (toPage.value < 1 || toPage.value > pdfPageCount.value) {
+    toastMessage.value = 'Página inexistente.';
+    showToast.value = true;
+  }
+  displayedPage.value = Math.min(pdfPageToDisplayedPage(pdfPageCount.value), parseInt(toPage.value, 10)) + 2;
+}
+
 const handleTouchEnd = (e) => {
   const touchEndX = e.changedTouches[0].screenX;
   if (touchStartX.value - touchEndX > 50) {
-    page.value = Math.min(pageCount.value, page.value + 1);
+    displayedPage.value = Math.min(pdfPageToDisplayedPage(pdfPageCount.value), displayedPage.value + 1);
   } else if (touchStartX.value - touchEndX < -50) {
-    page.value = Math.max(1, page.value - 1);
+    displayedPage.value = Math.max(1, displayedPage.value - 1);
   }
 };
 
@@ -53,9 +80,10 @@ const handleToastClose = () => {
 };
 
 onMounted(() => {
-  setTimeout(() => handleLoad({ numPages: pageCount.value }), 2000);
+  setTimeout(() => handleLoad({ numPages: pdfPageCount.value }), 2000);
 });
 </script>
+
 
 <template>
   <v-container>
@@ -63,7 +91,7 @@ onMounted(() => {
       <v-col cols="12" sm="10" md="8" lg="6">
         <v-card>
           <v-card-text>
-            <v-btn @click="page = 1" icon rel="noopener noreferrer">
+            <v-btn @click="displayedPage = 1" icon>
               <v-icon>mdi-home</v-icon>
             </v-btn>
           </v-card-text>
@@ -84,56 +112,77 @@ onMounted(() => {
           </v-card-subtitle>
 
           <v-card-actions>
-            <v-btn @click="page = Math.max(1, page - 1)" :disabled="page === 1" icon>
+            <v-btn @click="displayedPage = Math.max(1, displayedPage - 1)" :disabled="displayedPage === 1" icon>
               <v-icon>mdi-chevron-left</v-icon>
             </v-btn>
 
             <v-spacer></v-spacer>
 
-            <span>{{ page }}</span>
+            <span v-if="displayedPage <= 2">0</span>
+            <span v-else>{{ displayedPage - 2 }}</span>
             <v-spacer></v-spacer>
             <span>de</span>
             <v-spacer></v-spacer>
-            <span v-on:click="page = pageCount">{{ pageCount }}</span>
+            <span v-if="pdfPageCount > 2">{{ pdfPageToDisplayedPage(pdfPageCount) }}</span>
+            <span v-else>0</span>
 
             <v-spacer></v-spacer>
 
-            <v-btn @click="page = Math.min(pageCount, page + 1)" :disabled="page === pageCount" icon>
+            <v-btn @click="displayedPage = Math.min(pdfPageToDisplayedPage(pdfPageCount), displayedPage + 1)" :disabled="displayedPage === pdfPageToDisplayedPage(pdfPageCount)" icon>
               <v-icon>mdi-chevron-right</v-icon>
             </v-btn>
+          </v-card-actions>
+          <v-card-actions>
+           <v-btn
+                v-if="toPage === null"
+                @click="toPage = 0"
+              >
+                Ir para uma página
+              </v-btn>
+            <v-text-field
+            v-else
+
+              v-model="toPage"
+              class="page-input"
+              type="number"
+              label="Digite uma página"
+              hide-details="auto"
+              @keydown.enter="goToPage"
+            ></v-text-field>
           </v-card-actions>
 
           <v-card-text @touchstart="handleTouchStart" @touchend="handleTouchEnd">
             <VuePdfEmbed
-              :page="page"
+              :page="displayedPageToPdfPage(displayedPage)"
               :source="pdfSource"
               @count="handlePageCount"
               @loaded="handleLoad"
               :loading="isLoading"
-              :scale="zoom"
             />
           </v-card-text>
-          <div class="d-flex align-center justify-center">
-            <input
-              type="number"
-              v-model="page"
-              :max="pageCount"
-              min="1"
-              class="page-input"
-            />
-          </div>
+
         </v-card>
       </v-col>
     </v-row>
   </v-container>
 
-  <v-snackbar v-model="showToast" :timeout="3000" color="error" centered>
+  <v-snackbar v-model="showToast" :timeout="3000" color="error" top centered>
     {{ toastMessage }}
-    <template v-slot:actions="{ handleToastClose }">
+    <template v-slot:actions="{ close }">
       <v-btn color="white" text @click="handleToastClose">Fechar</v-btn>
     </template>
   </v-snackbar>
 </template>
+
+<style scoped>
+.page-input {
+  width: 60px;
+  text-align: center;
+  margin: 0 16px;
+}
+</style>
+
+
 
 <style scoped>
 .page-input {
